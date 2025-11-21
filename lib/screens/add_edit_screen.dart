@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 class AddEditScreen extends StatefulWidget {
   final Map<String, dynamic>? journalEntry;
@@ -15,6 +17,8 @@ class _AddEditScreenState extends State<AddEditScreen> {
   final _titleController = TextEditingController();
   final _textController = TextEditingController();
 
+  File? _selectedImage;
+
   @override
   void initState() {
     super.initState();
@@ -22,6 +26,11 @@ class _AddEditScreenState extends State<AddEditScreen> {
     if (widget.journalEntry != null) {
       _titleController.text = widget.journalEntry!['title'];
       _textController.text = widget.journalEntry!['snippet'];
+
+      String? path = widget.journalEntry!['image_path'];
+      if (path != null && path.isNotEmpty) {
+        _selectedImage = File(path);
+      }
     }
   }
 
@@ -30,6 +39,19 @@ class _AddEditScreenState extends State<AddEditScreen> {
     _textController.dispose();
     _titleController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final XFile? pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _selectedImage = File(pickedFile.path);
+      });
+    }
   }
 
   void _onSave() {
@@ -49,6 +71,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
       "snippet": text,
       "date": formattedDate,
       "mood": Icons.mood,
+      'image_path': _selectedImage?.path ?? '',
     };
 
     Navigator.pop(context, newEntry);
@@ -96,6 +119,20 @@ class _AddEditScreenState extends State<AddEditScreen> {
               keyboardType: TextInputType.multiline,
             ),
             SizedBox(height: 18),
+            if (_selectedImage != null)
+              Padding(
+                padding: EdgeInsets.only(top: 15),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(
+                    _selectedImage!,
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -113,12 +150,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
                 SizedBox(width: 24),
                 Column(
                   children: [
-                    IconButton(
-                      onPressed: () {
-                        /*To do Image picker*/
-                      },
-                      icon: Icon(Icons.image),
-                    ),
+                    IconButton(onPressed: _pickImage, icon: Icon(Icons.image)),
                     Text("Image"),
                   ],
                 ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:life_journal/screens/add_edit_screen.dart';
+import 'package:life_journal/screens/journal_view_screen.dart';
+import 'package:life_journal/services/database_helper.dart';
 import 'package:life_journal/widgets/journal_card.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -12,14 +14,27 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final List<Map<String, dynamic>> _journalEntries = [
-    {
-      "title": "A Walk in the Park",
-      "snippet": "The weather was perfect today. I saw a dog playing fetch...",
-      "date": "Nov 14, 2025",
-      "mood": Icons.wb_sunny,
-    },
-  ];
+  List<Map<String, dynamic>> _journalEntries = [];
+  var _isLoading = true;
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    _refreshJournal();
+  }
+
+  Future<void> _refreshJournal() async {
+    setState(() {
+      _isLoading = true;
+    });
+    final data = await DatabaseHelper.instance.readAllJournals();
+    setState(() {
+      _journalEntries = data;
+      _isLoading = false;
+    });
+  }
+
   void _navigateToAddScreen() async {
     final result = await Navigator.push(
       context,
@@ -27,33 +42,62 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (result != null && result is Map<String, dynamic>) {
-      setState(() {
-        _journalEntries.insert(0, result);
-      });
+      final dbEntry = {
+        'title': result['title'],
+        'snippet': result['snippet'],
+        'date': result['date'],
+        'mood': (result['mood'] as IconData).codePoint,
+        // 1. SAVE ACTUAL IMAGE PATH
+        'image_path': result['image_path'] ?? '',
+      };
+      await DatabaseHelper.instance.create(dbEntry);
+      _refreshJournal();
     }
   }
 
-  void _navigateToEditScreen(Map<String, dynamic> entry, int index) async {
+  void _navigateToViewScreen(Map<String, dynamic> entry, int index) async {
+    final viewEntry = Map<String, dynamic>.from(entry);
+    viewEntry['mood'] = IconData(entry['mood'], fontFamily: 'MaterialIcons');
+
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (ctx) => AddEditScreen(journalEntry: entry)),
+      MaterialPageRoute(builder: (ctx) => JournalViewScreen(entry: viewEntry)),
     );
     if (result != null && result is Map<String, dynamic>) {
-      setState(() {
-        _journalEntries[index] = result;
-      });
+      if (result['delete'] == true) {
+        _refreshJournal();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Journal Deleted!'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+      final updateEntry = {
+        'id': entry['id'],
+        'title': result['title'],
+        'snippet': result['snippet'],
+        'date': result['date'],
+        'mood': (result['mood'] as IconData).codePoint,
+        // 2. UPDATE ACTUAL IMAGE PATH
+        'image_path': result['image_path'] ?? '',
+      };
+
+      await DatabaseHelper.instance.update(updateEntry);
+      _refreshJournal();
     }
   }
 
   //for showing contet menu
-  void _showContextMenu(Offset tapPosition, int index) async {
+  void _showContextMenu(Offset tapPosition, int id) async {
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox;
     //show the menu ay the tap position
     final result = await showMenu(
       context: context,
       position: RelativeRect.fromRect(
-        Rect.fromLTWH(tapPosition.dx, tapPosition.dy, 30, 30),
+        Rect.fromLTWH(tapPosition.dx + 100, tapPosition.dy - 20, 30, 30),
         Offset.zero & overlay.size,
       ),
       items: [
@@ -70,11 +114,11 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
     if (result == 'delete') {
-      _shoeDeleteConfirmation(index);
+      _shoeDeleteConfirmation(id);
     }
   }
 
-  void _shoeDeleteConfirmation(int index) {
+  void _shoeDeleteConfirmation(int id) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -88,17 +132,18 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              setState(() {
-                _journalEntries.removeAt(index);
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Journal Deleted'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
+              await DatabaseHelper.instance.delete(id);
+              _refreshJournal();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Journal Deleted'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
             },
             child: Text('Delete', style: TextStyle(color: Colors.red)),
           ),
@@ -132,13 +177,17 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: _journalEntries.length,
               itemBuilder: (context, index) {
                 final entry = _journalEntries[index];
+                final moodIcon = IconData(
+                  entry['mood'],
+                  fontFamily: 'MaterialIcons',
+                );
                 return JournalCard(
                   title: entry['title'],
                   snippet: entry['snippet'],
                   date: entry['date'],
-                  moodIcon: entry['mood'],
+                  moodIcon: moodIcon,
                   onTap: () {
-                    _navigateToEditScreen(entry, index);
+                    _navigateToViewScreen(entry, index);
                   },
                   onLongPress: (tapPosition) {
                     _showContextMenu(tapPosition, index);

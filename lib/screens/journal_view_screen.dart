@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:life_journal/screens/add_edit_screen.dart';
 import 'package:life_journal/services/database_helper.dart';
+import 'dart:io';
 
 class JournalViewScreen extends StatefulWidget {
   final Map<String, dynamic> entry;
@@ -68,6 +69,8 @@ class _JournalViewState extends State<JournalViewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String? imagePath = currentEntry['image_path'];
+    var hasImage = imagePath != null && imagePath.isNotEmpty;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -124,14 +127,38 @@ class _JournalViewState extends State<JournalViewScreen> {
                 ),
               ),
               SizedBox(height: 30),
-              Row(
-                children: [
-                  Text('Mood: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Icon(
-                    currentEntry['mood'],
-                    color: Theme.of(context).colorScheme.primary,
+              if (hasImage) ...[
+                SizedBox(height: 20),
+                ClipRect(
+                  child: Image.file(
+                    File(imagePath),
+                    width: double.infinity,
+                    fit: BoxFit.cover,
                   ),
-                ],
+                ),
+              ],
+              SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  // color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      'Mood: ',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Icon(
+                      currentEntry['mood'],
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
