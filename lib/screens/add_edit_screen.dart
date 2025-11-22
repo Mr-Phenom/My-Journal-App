@@ -1,7 +1,10 @@
+import 'dart:io';
+import 'dart:convert'; // Needed for JSON encoding
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart'; // Needed for persistent storage
+import 'package:path/path.dart' as path; // Needed for file naming
 
 class AddEditScreen extends StatefulWidget {
   final Map<String, dynamic>? journalEntry;
@@ -17,7 +20,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
   final _titleController = TextEditingController();
   final _textController = TextEditingController();
 
-  File? _selectedImage;
+  List<String> _selectedImagePaths = [];
 
   @override
   void initState() {
@@ -27,9 +30,16 @@ class _AddEditScreenState extends State<AddEditScreen> {
       _titleController.text = widget.journalEntry!['title'];
       _textController.text = widget.journalEntry!['snippet'];
 
-      String? path = widget.journalEntry!['image_path'];
-      if (path != null && path.isNotEmpty) {
-        _selectedImage = File(path);
+      String? dbImages = widget.journalEntry!['image_path'];
+      if (dbImages != null && dbImages.isNotEmpty) {
+        try {
+          // try to decode as a json file {'path1','path2'}
+          List<dynamic> decoded = jsonDecode(dbImages);
+          _selectedImagePaths = decoded.map((e) => e.toString()).toList();
+        } catch (e) {
+          // if fails, it is old single path so add to list
+          _selectedImagePaths.add(dbImages);
+        }
       }
     }
   }
@@ -41,17 +51,56 @@ class _AddEditScreenState extends State<AddEditScreen> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
+  // Saving image to permanetly to app storage
+  Future<String> _saveImageToAppDir(XFile pickedFile) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final String fileName =
+        '${DateTime.now().millisecondsSinceEpoch}${path.extension(pickedFile.path)}';
+    final File localImage = await File(
+      pickedFile.path,
+    ).copy('${directory.path}/$fileName');
+    return localImage.path;
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
     final picker = ImagePicker();
-    final XFile? pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-    );
+    final XFile? pickedFile = await picker.pickImage(source: source);
 
     if (pickedFile != null) {
+      String localPath = await _saveImageToAppDir(pickedFile);
       setState(() {
-        _selectedImage = File(pickedFile.path);
+        _selectedImagePaths.add(localPath);
       });
     }
+  }
+
+  // Show modal to choose camera or gallery
+  void _showImageSourceActionSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: Icon(Icons.photo_library),
+              title: Text('Gellary'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.photo_camera),
+              title: Text('Take a photo'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _pickImage(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onSave() {
@@ -66,12 +115,14 @@ class _AddEditScreenState extends State<AddEditScreen> {
       'MMM d, yyyy',
     ).format(DateTime.now());
 
+    String imagePathString = jsonEncode(_selectedImagePaths);
+
     final newEntry = {
       "title": title.isEmpty ? "Untitled" : title,
       "snippet": text,
       "date": formattedDate,
       "mood": Icons.mood,
-      'image_path': _selectedImage?.path ?? '',
+      'image_path': imagePathString,
     };
 
     Navigator.pop(context, newEntry);
@@ -118,21 +169,51 @@ class _AddEditScreenState extends State<AddEditScreen> {
               minLines: 10,
               keyboardType: TextInputType.multiline,
             ),
+
             SizedBox(height: 18),
-            if (_selectedImage != null)
-              Padding(
-                padding: EdgeInsets.only(top: 15),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    _selectedImage!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
+            if (_selectedImagePaths != null)
+              SizedBox(
+                height: 150,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemBuilder: (ctx, index) {
+                    return Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: Stack(
+                        children: [
+                          ClipRect(
+                            child: Image.file(
+                              File(_selectedImagePaths[index]),
+                              height: 150,
+                              width: 150,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedImagePaths.removeAt(index);
+                                });
+                              },
+                              child: CircleAvatar(
+                                radius: 12,
+                                backgroundColor: Colors.white,
+                                child: Icon(Icons.close),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  itemCount: _selectedImagePaths.length,
                 ),
               ),
-            SizedBox(height: 10),
+            if (_selectedImagePaths != null) SizedBox(height: 15),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -142,7 +223,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
                       onPressed: () {
                         /*To do mood picker*/
                       },
-                      icon: Icon(Icons.mood),
+                      icon: Icon(Icons.mood, size: 30),
                     ),
                     Text("Mood"),
                   ],
@@ -150,7 +231,10 @@ class _AddEditScreenState extends State<AddEditScreen> {
                 SizedBox(width: 24),
                 Column(
                   children: [
-                    IconButton(onPressed: _pickImage, icon: Icon(Icons.image)),
+                    IconButton(
+                      onPressed: _showImageSourceActionSheet,
+                      icon: Icon(Icons.image, size: 30),
+                    ),
                     Text("Image"),
                   ],
                 ),
@@ -161,7 +245,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
                       onPressed: () {
                         /*To do Sticker picker*/
                       },
-                      icon: Icon(Icons.star),
+                      icon: Icon(Icons.star, size: 30),
                     ),
                     Text("Sticker"),
                   ],

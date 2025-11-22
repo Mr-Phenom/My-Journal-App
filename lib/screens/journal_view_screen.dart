@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:life_journal/screens/add_edit_screen.dart';
 import 'package:life_journal/services/database_helper.dart';
 import 'dart:io';
+import 'dart:convert'; // Needed for JSON decoding
 
 class JournalViewScreen extends StatefulWidget {
   final Map<String, dynamic> entry;
@@ -15,11 +16,27 @@ class JournalViewScreen extends StatefulWidget {
 
 class _JournalViewState extends State<JournalViewScreen> {
   late Map<String, dynamic> currentEntry;
+  List<String> imagePaths = [];
 
   @override
   void initState() {
     super.initState();
-    currentEntry = widget.entry;
+    _loadEntry(widget.entry);
+  }
+
+  void _loadEntry(Map<String, dynamic> entry) {
+    currentEntry = entry;
+    imagePaths = [];
+
+    String? dbImages = entry['image_path'];
+    if (dbImages != null && dbImages.isNotEmpty) {
+      try {
+        List<dynamic> decode = jsonDecode(dbImages);
+        imagePaths = decode.map((e) => e.toString()).toList();
+      } catch (e) {
+        imagePaths.add(dbImages);
+      }
+    }
   }
 
   void _navigateToEdit() async {
@@ -32,7 +49,7 @@ class _JournalViewState extends State<JournalViewScreen> {
 
     if (result != null && result is Map<String, dynamic>) {
       setState(() {
-        currentEntry = result;
+        _loadEntry(result);
       });
     }
   }
@@ -69,8 +86,8 @@ class _JournalViewState extends State<JournalViewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final String? imagePath = currentEntry['image_path'];
-    var hasImage = imagePath != null && imagePath.isNotEmpty;
+    // final String? imagePath = currentEntry['image_path'];
+    // var hasImage = imagePath != null && imagePath.isNotEmpty;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -99,14 +116,35 @@ class _JournalViewState extends State<JournalViewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                currentEntry['date'],
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 14,
-                  fontStyle: FontStyle.italic,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      currentEntry['date'],
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 15),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Mood: ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Icon(
+                        currentEntry['mood'],
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
+                  ),
+                ],
               ),
+
               SizedBox(height: 16),
               Text(
                 currentEntry['title'],
@@ -127,39 +165,29 @@ class _JournalViewState extends State<JournalViewScreen> {
                 ),
               ),
               SizedBox(height: 30),
-              if (hasImage) ...[
-                SizedBox(height: 20),
-                ClipRect(
-                  child: Image.file(
-                    File(imagePath),
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
+
+              if (imagePaths.isNotEmpty)
+                Column(
+                  children: imagePaths.map((path) {
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: Column(
+                        children: [
+                          ClipRect(
+                            child: Image.file(
+                              File(path),
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          SizedBox(height: 5),
+                          Text("Image ${imagePaths.indexOf(path) + 1}"),
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
-              ],
               SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  // color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'Mood: ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Icon(
-                      currentEntry['mood'],
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
