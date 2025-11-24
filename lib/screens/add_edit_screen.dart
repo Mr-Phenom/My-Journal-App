@@ -3,8 +3,10 @@ import 'dart:convert'; // Needed for JSON encoding
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:life_journal/screens/pin_screen.dart';
 import 'package:path_provider/path_provider.dart'; // Needed for persistent storage
-import 'package:path/path.dart' as path; // Needed for file naming
+import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart'; // Needed for file naming
 
 class AddEditScreen extends StatefulWidget {
   final Map<String, dynamic>? journalEntry;
@@ -21,14 +23,55 @@ class _AddEditScreenState extends State<AddEditScreen> {
   final _textController = TextEditingController();
 
   List<String> _selectedImagePaths = [];
+  IconData _selectedMood = Icons.sentiment_very_satisfied;
+  String _moodLabel = 'happy';
+
+  bool _isLocked = false;
+
+  final List<Map<String, dynamic>> _moodsList = [
+    {
+      'label': 'Happy',
+      'icon': Icons.sentiment_very_satisfied,
+      'color': Colors.amber,
+    },
+    {
+      'label': 'Sad',
+      'icon': Icons.sentiment_very_dissatisfied,
+      'color': Colors.blueGrey,
+    },
+    {'label': 'Angry', 'icon': Icons.mood_bad, 'color': Colors.red},
+    {'label': 'Depressed', 'icon': Icons.cloud_off, 'color': Colors.indigo},
+    {'label': 'Disgusted', 'icon': Icons.sick, 'color': Colors.green},
+    {'label': 'Nostalgia', 'icon': Icons.history_edu, 'color': Colors.brown},
+    {
+      'label': 'Pity',
+      'icon': Icons.volunteer_activism,
+      'color': Colors.pinkAccent,
+    },
+    {
+      'label': 'Pretty',
+      'icon': Icons.face_retouching_natural,
+      'color': Colors.purpleAccent,
+    },
+    {'label': 'Powerful', 'icon': Icons.bolt, 'color': Colors.orangeAccent},
+    {
+      'label': 'Superior',
+      'icon': Icons.emoji_events,
+      'color': Colors.deepOrange,
+    },
+    {'label': 'Inferior', 'icon': Icons.broken_image, 'color': Colors.grey},
+    {'label': 'Fun', 'icon': Icons.celebration, 'color': Colors.teal},
+  ];
 
   @override
   void initState() {
     super.initState();
 
     if (widget.journalEntry != null) {
-      _titleController.text = widget.journalEntry!['title'];
-      _textController.text = widget.journalEntry!['snippet'];
+      _titleController.text = widget.journalEntry!['title'] ?? "";
+      _textController.text = widget.journalEntry!['snippet'] ?? "";
+
+      _isLocked = (widget.journalEntry!['isL_locked'] ?? 0) == 1;
 
       String? dbImages = widget.journalEntry!['image_path'];
       if (dbImages != null && dbImages.isNotEmpty) {
@@ -39,6 +82,63 @@ class _AddEditScreenState extends State<AddEditScreen> {
         } catch (e) {
           // if fails, it is old single path so add to list
           _selectedImagePaths.add(dbImages);
+        }
+      }
+      if (widget.journalEntry!.containsKey('mood') &&
+          widget.journalEntry!['mood'] != null) {
+        try {
+          // Safely convert the integer back to an Icon
+          int moodCode = widget.journalEntry!['mood'];
+          _selectedMood = IconData(moodCode, fontFamily: 'MaterialIcons');
+
+          // Find the matching label
+          final moodMap = _moodsList.firstWhere(
+            (m) => (m['icon'] as IconData).codePoint == _selectedMood.codePoint,
+            orElse: () => {'label': 'Custom'},
+          );
+          _moodLabel = moodMap['label'];
+        } catch (e) {
+          // If anything goes wrong, fallback to Happy
+          _selectedMood = Icons.sentiment_very_satisfied;
+          _moodLabel = "Happy";
+        }
+      }
+    }
+  }
+
+  void _toggleLock() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasPin = prefs.containsKey('user_pin');
+
+    if (!hasPin) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Please set a PIN in the Home Screen first!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Verify PIN before changing setting
+    if (mounted) {
+      final verified = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (ctx) => const PinScreen(isSetting: false)),
+      );
+
+      if (verified == true) {
+        setState(() {
+          _isLocked = !_isLocked;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_isLocked ? "Entry Secured" : "Entry Unlocked"),
+            ),
+          );
         }
       }
     }
@@ -103,6 +203,58 @@ class _AddEditScreenState extends State<AddEditScreen> {
     );
   }
 
+  void _showMoodPicker() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return Container(
+          padding: EdgeInsets.all(15),
+          height: 400,
+          child: Column(
+            children: [
+              Text("How are you feeling about this journal?"),
+              SizedBox(height: 15),
+              Expanded(
+                child: GridView.builder(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 15,
+                    crossAxisSpacing: 15,
+                  ),
+                  itemCount: _moodsList.length,
+                  itemBuilder: (context, index) {
+                    final mood = _moodsList[index];
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedMood = mood['icon'];
+                          _moodLabel = mood['label'];
+                        });
+                        Navigator.pop(context);
+                      },
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: (mood['color'] as Color)
+                                .withOpacity(0.2),
+                            child: Icon(mood['icon'], color: mood['color']),
+                          ),
+                          SizedBox(height: 4),
+                          Text(mood['label'], overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _onSave() {
     final title = _titleController.text;
     final text = _textController.text;
@@ -121,7 +273,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
       "title": title.isEmpty ? "Untitled" : title,
       "snippet": text,
       "date": formattedDate,
-      "mood": Icons.mood,
+      "mood": _selectedMood,
       'image_path': imagePathString,
     };
 
@@ -138,8 +290,14 @@ class _AddEditScreenState extends State<AddEditScreen> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         actions: [
           IconButton(
+            onPressed: _toggleLock,
+            icon: _isLocked
+                ? Icon(Icons.lock_open, color: Colors.green)
+                : Icon(Icons.lock, color: Colors.red),
+          ),
+          IconButton(
             onPressed: _onSave,
-            icon: Icon(Icons.save, color: Colors.black12),
+            icon: Icon(Icons.save, color: Colors.black87),
           ),
         ],
       ),
@@ -220,12 +378,10 @@ class _AddEditScreenState extends State<AddEditScreen> {
                 Column(
                   children: [
                     IconButton(
-                      onPressed: () {
-                        /*To do mood picker*/
-                      },
-                      icon: Icon(Icons.mood, size: 30),
+                      onPressed: _showMoodPicker,
+                      icon: Icon(_selectedMood, size: 30),
                     ),
-                    Text("Mood"),
+                    Text(_moodLabel),
                   ],
                 ),
                 SizedBox(width: 24),

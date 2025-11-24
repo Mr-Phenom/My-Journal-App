@@ -17,7 +17,12 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(path, version: 1, onCreate: _createDb);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDb,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future _createDb(Database db, int version) async {
@@ -27,7 +32,18 @@ class DatabaseHelper {
     snippet TEXT,
     date TEXT,
     mood INTEGER,
-    image_path TEXT)''');
+    image_path TEXT,
+    is_locked INTEGER DEFAULT 0)''');
+  }
+
+  // --- NEW: Handle Database Upgrades ---
+  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // If user has version 1, add the new column
+      await db.execute(
+        'ALTER TABLE journals ADD COLUMN is_locked INTEGER DEFAULT 0',
+      );
+    }
   }
 
   Future<int> create(Map<String, dynamic> row) async {
@@ -50,5 +66,19 @@ class DatabaseHelper {
   Future<int> delete(int id) async {
     final db = await instance.database;
     return db.delete('journals', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- FIXED: Robust Search Function ---
+  Future<List<Map<String, dynamic>>> searchJournals(String keyword) async {
+    final db = await instance.database;
+    return await db.query(
+      'journals',
+      // 1. Use LOWER() to ensure case-insensitive matching
+      // 2. Use COALESCE(snippet, '') to handle null snippets safely
+      where:
+          'LOWER(title) LIKE LOWER(?) OR COALESCE(LOWER(snippet), "") LIKE LOWER(?)',
+      whereArgs: ['%$keyword%', '%$keyword%'],
+      orderBy: 'id DESC',
+    );
   }
 }
